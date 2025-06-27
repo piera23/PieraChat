@@ -1,0 +1,83 @@
+#!/bin/bash
+
+echo "🚀 Setup WebSocket Chat Project"
+
+# Colori per output
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+# Crea struttura del progetto
+echo -e "${BLUE}📁 Creazione struttura del progetto...${NC}"
+mkdir -p websocket-chat-project/{backend,frontend}
+cd websocket-chat-project
+
+# Setup Backend
+echo -e "${BLUE}⚙️ Setup Backend C#...${NC}"
+cd backend
+dotnet new sln -n WebSocketChat
+dotnet new web -n WebSocketChat
+dotnet sln add WebSocketChat/WebSocketChat.csproj
+cd WebSocketChat
+mkdir -p Models Services Entities
+
+echo -e "${GREEN}✅ Backend struttura creata${NC}"
+
+# Setup Frontend
+echo -e "${BLUE}⚛️ Setup Frontend React...${NC}"
+cd ../../frontend
+npm create vite@latest . -- --template react -y
+npm install
+npm install lucide-react
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+
+mkdir -p src/{components,hooks,utils}
+
+echo -e "${GREEN}✅ Frontend struttura creata${NC}"
+
+# Crea file di configurazione
+echo -e "${BLUE}📝 Creazione file di configurazione...${NC}"
+
+# .gitignore per il progetto principale
+cat > ../.gitignore << 'EOF'
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production
+build/
+dist/
+out/
+bin/
+obj/
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.log
+.vscode/
+.idea/
+
+# .NET
+*.swp
+*.*~
+project.lock.json
+.DS_Store
+*.pyc
+nupkg/
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+EOF
+
+echo -e "${GREEN}✅ Setup completato!${NC}"
+echo ""
+echo "Per avviare il progetto:"
+echo "1. Terminal 1: cd backend/WebSocketChat && dotnet run"
+echo "2. Terminal 2: cd frontend && npm run dev"

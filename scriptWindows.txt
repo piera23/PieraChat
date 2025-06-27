@@ -1,0 +1,80 @@
+Write-Host "🚀 Setup WebSocket Chat Project" -ForegroundColor Green
+
+# Crea struttura del progetto
+Write-Host "📁 Creazione struttura del progetto..." -ForegroundColor Blue
+New-Item -ItemType Directory -Force -Path websocket-chat-project/backend
+New-Item -ItemType Directory -Force -Path websocket-chat-project/frontend
+Set-Location websocket-chat-project
+
+# Setup Backend
+Write-Host "⚙️ Setup Backend C#..." -ForegroundColor Blue
+Set-Location backend
+dotnet new sln -n WebSocketChat
+dotnet new web -n WebSocketChat
+dotnet sln add WebSocketChat/WebSocketChat.csproj
+Set-Location WebSocketChat
+New-Item -ItemType Directory -Force -Path Models
+New-Item -ItemType Directory -Force -Path Services
+New-Item -ItemType Directory -Force -Path Entities
+
+Write-Host "✅ Backend struttura creata" -ForegroundColor Green
+
+# Setup Frontend
+Write-Host "⚛️ Setup Frontend React..." -ForegroundColor Blue
+Set-Location ../../frontend
+npm create vite@latest . -- --template react -y
+npm install
+npm install lucide-react
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+
+New-Item -ItemType Directory -Force -Path src/components
+New-Item -ItemType Directory -Force -Path src/hooks
+New-Item -ItemType Directory -Force -Path src/utils
+
+Write-Host "✅ Frontend struttura creata" -ForegroundColor Green
+
+# Crea .gitignore
+$gitignoreContent = @"
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Production
+build/
+dist/
+out/
+bin/
+obj/
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.log
+.vscode/
+.idea/
+
+# .NET
+*.swp
+*.*~
+project.lock.json
+.DS_Store
+*.pyc
+nupkg/
+.vs/
+*.user
+*.userosscache
+*.sln.docstates
+"@
+
+Set-Content -Path "../.gitignore" -Value $gitignoreContent
+
+Write-Host "✅ Setup completato!" -ForegroundColor Green
+Write-Host ""
+Write-Host "Per avviare il progetto:" -ForegroundColor Yellow
+Write-Host "1. Terminal 1: cd backend/WebSocketChat && dotnet run"
+Write-Host "2. Terminal 2: cd frontend && npm run dev"
