@@ -3,8 +3,16 @@ using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure file upload limits
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 104857600; // 100MB
+    options.ValueLengthLimit = 104857600;
+});
 
 // Add CORS
 builder.Services.AddCors(options =>
@@ -26,6 +34,10 @@ var connections = new ConcurrentDictionary<string, ConnectionInfo>();
 
 // Rate limiting storage
 var rateLimits = new ConcurrentDictionary<string, RateLimitInfo>();
+
+// File storage manager
+var fileStorage = new FileStorageManager();
+await fileStorage.InitializeAsync();
 
 app.UseWebSockets(new WebSocketOptions
 {
@@ -236,22 +248,36 @@ app.Map("/ws", async context =>
     }
 });
 
-app.MapGet("/", () => Results.Json(new
+app.MapGet("/", () =>
 {
-    service = "PieraChat Secure WebSocket Server",
-    version = "2.0.0",
-    status = "running",
-    endpoint = "/ws",
-    features = new[]
+    var fileStats = fileStorage.GetStats();
+    return Results.Json(new
     {
-        "End-to-End Encryption",
-        "Rate Limiting",
-        "Public Key Exchange",
-        "Username Validation"
-    },
-    activeConnections = connections.Count,
-    uptime = DateTime.UtcNow.ToString("o")
-}));
+        service = "PieraChat Secure WebSocket Server",
+        version = "2.1.0",
+        status = "running",
+        endpoints = new
+        {
+            websocket = "/ws",
+            upload = "/api/upload",
+            download = "/api/download/{fileId}",
+            fileStats = "/api/files/stats"
+        },
+        features = new[]
+        {
+            "End-to-End Encryption (E2EE)",
+            "Multimedia Messaging (Photos, Videos, Audio, Files)",
+            "Temporary File Storage (24h expiration)",
+            "Rate Limiting & DDoS Protection",
+            "Public Key Exchange",
+            "Username Validation",
+            "Contact & Calendar Event Sharing"
+        },
+        activeConnections = connections.Count,
+        fileStorage = fileStats,
+        uptime = DateTime.UtcNow.ToString("o")
+    });
+});
 
 app.MapGet("/health", () =>
 {
@@ -277,6 +303,110 @@ app.MapGet("/stats", () => Results.Json(new
     serverTime = DateTime.UtcNow.ToString("o")
 }));
 
+// API: Upload file
+app.MapPost("/api/upload", async (HttpContext context) =>
+{
+    try
+    {
+        if (!context.Request.HasFormContentType)
+        {
+            return Results.BadRequest(new { error = "Invalid content type" });
+        }
+
+        var form = await context.Request.ReadFormAsync();
+        var file = form.Files.GetFile("file");
+
+        if (file == null || file.Length == 0)
+        {
+            return Results.BadRequest(new { error = "No file provided" });
+        }
+
+        // Validate file size (max 100MB)
+        if (file.Length > 104857600)
+        {
+            return Results.BadRequest(new { error = "File too large (max 100MB)" });
+        }
+
+        var username = form["username"].ToString();
+        var encryptedData = form["encryptedData"].ToString();
+
+        var fileMetadata = await fileStorage.SaveFileAsync(file, username, encryptedData);
+
+        LogInfo($"[FILE UPLOAD] {username} uploaded {file.FileName} ({file.Length} bytes)");
+
+        return Results.Ok(new
+        {
+            fileId = fileMetadata.FileId,
+            fileName = fileMetadata.FileName,
+            fileSize = fileMetadata.FileSize,
+            downloadUrl = $"/api/download/{fileMetadata.FileId}",
+            expiresAt = fileMetadata.ExpiresAt.ToString("o")
+        });
+    }
+    catch (Exception ex)
+    {
+        LogError($"[ERROR] File upload failed: {ex.Message}");
+        return Results.Problem("File upload failed");
+    }
+});
+
+// API: Download file
+app.MapGet("/api/download/{fileId}", async (string fileId) =>
+{
+    try
+    {
+        var fileInfo = await fileStorage.GetFileAsync(fileId);
+
+        if (fileInfo == null)
+        {
+            return Results.NotFound(new { error = "File not found or expired" });
+        }
+
+        LogInfo($"[FILE DOWNLOAD] File {fileInfo.FileName} downloaded");
+
+        return Results.File(
+            fileInfo.Stream,
+            fileInfo.ContentType ?? "application/octet-stream",
+            fileInfo.FileName
+        );
+    }
+    catch (Exception ex)
+    {
+        LogError($"[ERROR] File download failed: {ex.Message}");
+        return Results.Problem("File download failed");
+    }
+});
+
+// API: Delete file
+app.MapDelete("/api/files/{fileId}", async (string fileId) =>
+{
+    try
+    {
+        var deleted = await fileStorage.DeleteFileAsync(fileId);
+
+        if (!deleted)
+        {
+            return Results.NotFound(new { error = "File not found" });
+        }
+
+        LogInfo($"[FILE DELETE] File {fileId} deleted");
+
+        return Results.Ok(new { success = true });
+    }
+    catch (Exception ex)
+    {
+        LogError($"[ERROR] File deletion failed: {ex.Message}");
+        return Results.Problem("File deletion failed");
+    }
+});
+
+// API: Get file stats
+app.MapGet("/api/files/stats", () =>
+{
+    var stats = fileStorage.GetStats();
+    return Results.Json(stats);
+});
+
 // Cleanup task for stale connections
 var cleanupTimer = new System.Threading.Timer(_ =>
 {
@@ -295,6 +425,16 @@ var cleanupTimer = new System.Threading.Timer(_ =>
         LogInfo($"[CLEANUP] Removed {staleConnections.Count} stale connections");
     }
 }, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
+
+// Cleanup task for expired files
+var fileCleanupTimer = new System.Threading.Timer(async _ =>
+{
+    var deletedCount = await fileStorage.CleanupExpiredFilesAsync();
+    if (deletedCount > 0)
+    {
+        LogInfo($"[FILE CLEANUP] Removed {deletedCount} expired files");
+    }
+}, null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
 
 LogInfo("🚀 PieraChat Secure Server started successfully!");
 
@@ -495,4 +635,221 @@ class RateLimitInfo
 {
     public int Count { get; set; }
     public DateTime FirstRequest { get; set; }
+}
+
+// File storage manager
+class FileStorageManager
+{
+    private readonly string _uploadDir = "./uploads";
+    private readonly string _metadataFile = "./uploads/metadata.json";
+    private readonly TimeSpan _expiration = TimeSpan.FromHours(24);
+    private readonly ConcurrentDictionary<string, FileMetadata> _metadata = new();
+    private readonly long _maxTotalStorage = 1073741824; // 1GB
+
+    public async Task InitializeAsync()
+    {
+        // Create uploads directory
+        if (!Directory.Exists(_uploadDir))
+        {
+            Directory.CreateDirectory(_uploadDir);
+        }
+
+        // Load metadata from file
+        if (File.Exists(_metadataFile))
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(_metadataFile);
+                var metadata = JsonSerializer.Deserialize<List<FileMetadata>>(json);
+
+                if (metadata != null)
+                {
+                    foreach (var item in metadata)
+                    {
+                        _metadata[item.FileId] = item;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load metadata: {ex.Message}");
+            }
+        }
+
+        // Cleanup expired files on startup
+        await CleanupExpiredFilesAsync();
+    }
+
+    public async Task<FileMetadata> SaveFileAsync(IFormFile file, string username, string? encryptedData = null)
+    {
+        // Check total storage usage
+        var currentUsage = GetTotalStorageUsage();
+        if (currentUsage + file.Length > _maxTotalStorage)
+        {
+            throw new InvalidOperationException("Storage limit exceeded");
+        }
+
+        var fileId = Guid.NewGuid().ToString();
+        var filePath = Path.Combine(_uploadDir, fileId);
+
+        // Save file to disk
+        using (var stream = new FileStream(filePath, FileMode.Create))
+        {
+            await file.CopyToAsync(stream);
+        }
+
+        // Create metadata
+        var metadata = new FileMetadata
+        {
+            FileId = fileId,
+            FileName = file.FileName,
+            ContentType = file.ContentType,
+            FileSize = file.Length,
+            UploadedBy = username,
+            UploadedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.Add(_expiration),
+            FilePath = filePath,
+            EncryptedData = encryptedData
+        };
+
+        _metadata[fileId] = metadata;
+
+        // Save metadata to file
+        await SaveMetadataAsync();
+
+        return metadata;
+    }
+
+    public async Task<FileDownloadInfo?> GetFileAsync(string fileId)
+    {
+        if (!_metadata.TryGetValue(fileId, out var metadata))
+        {
+            return null;
+        }
+
+        // Check if expired
+        if (DateTime.UtcNow > metadata.ExpiresAt)
+        {
+            await DeleteFileAsync(fileId);
+            return null;
+        }
+
+        // Check if file exists
+        if (!File.Exists(metadata.FilePath))
+        {
+            await DeleteFileAsync(fileId);
+            return null;
+        }
+
+        var stream = new FileStream(metadata.FilePath, FileMode.Open, FileAccess.Read);
+
+        return new FileDownloadInfo
+        {
+            Stream = stream,
+            FileName = metadata.FileName,
+            ContentType = metadata.ContentType
+        };
+    }
+
+    public async Task<bool> DeleteFileAsync(string fileId)
+    {
+        if (!_metadata.TryRemove(fileId, out var metadata))
+        {
+            return false;
+        }
+
+        // Delete physical file
+        try
+        {
+            if (File.Exists(metadata.FilePath))
+            {
+                File.Delete(metadata.FilePath);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to delete file {fileId}: {ex.Message}");
+        }
+
+        // Save updated metadata
+        await SaveMetadataAsync();
+
+        return true;
+    }
+
+    public async Task<int> CleanupExpiredFilesAsync()
+    {
+        var now = DateTime.UtcNow;
+        var expiredFiles = _metadata
+            .Where(kvp => now > kvp.Value.ExpiresAt)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var fileId in expiredFiles)
+        {
+            await DeleteFileAsync(fileId);
+        }
+
+        return expiredFiles.Count;
+    }
+
+    public object GetStats()
+    {
+        var totalFiles = _metadata.Count;
+        var totalSize = _metadata.Values.Sum(m => m.FileSize);
+
+        return new
+        {
+            totalFiles,
+            totalSizeMB = totalSize / 1024.0 / 1024.0,
+            maxStorageMB = _maxTotalStorage / 1024.0 / 1024.0,
+            usagePercent = (totalSize / (double)_maxTotalStorage) * 100,
+            oldestFile = _metadata.Values
+                .OrderBy(m => m.UploadedAt)
+                .Select(m => new { m.FileName, m.UploadedAt })
+                .FirstOrDefault()
+        };
+    }
+
+    private long GetTotalStorageUsage()
+    {
+        return _metadata.Values.Sum(m => m.FileSize);
+    }
+
+    private async Task SaveMetadataAsync()
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(_metadata.Values.ToList(), new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+            await File.WriteAllTextAsync(_metadataFile, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to save metadata: {ex.Message}");
+        }
+    }
+}
+
+class FileMetadata
+{
+    public string FileId { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string? ContentType { get; set; }
+    public long FileSize { get; set; }
+    public string UploadedBy { get; set; } = string.Empty;
+    public DateTime UploadedAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public string FilePath { get; set; } = string.Empty;
+    public string? EncryptedData { get; set; }
+}
+
+class FileDownloadInfo
+{
+    public Stream Stream { get; set; } = null!;
+    public string FileName { get; set; } = string.Empty;
+    public string? ContentType { get; set; }
 }

@@ -44,6 +44,12 @@
 - **Typing indicators** in tempo reale
 - **Online users** list dinamica
 
+### 💾 Privacy-First Storage
+- **Storage locale** - Messaggi salvati solo sul tuo dispositivo
+- **Server stateless** - Il server fa solo da relay, non memorizza nulla
+- **Export/Import** - Esporta cronologia in JSON o TXT
+- **Controllo totale** - Cancella i tuoi dati quando vuoi
+
 ### 🎨 UI/UX Moderna
 - **Design responsive** per tutti i dispositivi
 - **Dark/Light mode** support (futuro)
@@ -264,6 +270,7 @@ Guida completa: [mobile/README.md](mobile/README.md)
 - 📖 [**README.md**](README.md) - Questo file
 - 🏗️ [**ARCHITECTURE.md**](docs/ARCHITECTURE.md) - Architettura dettagliata
 - 🔐 [**SECURITY.md**](docs/SECURITY.md) - Sicurezza e crittografia
+- 💾 [**PRIVACY_STORAGE.md**](docs/PRIVACY_STORAGE.md) - Storage locale privacy-first
 - 📱 [**Mobile README**](mobile/README.md) - Guida app mobile
 
 ### Quick Links
