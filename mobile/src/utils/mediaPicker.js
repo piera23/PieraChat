@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Contacts from 'expo-contacts';
 import * as Calendar from 'expo-calendar';
+import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 
 const MAX_INLINE_SIZE = 1024 * 1024; // 1MB
@@ -356,7 +357,6 @@ export class MediaPickerManager {
       });
     } else {
       // React Native uses FileSystem
-      const FileSystem = require('expo-file-system').default;
       const base64 = await FileSystem.readAsStringAsync(uri, {
         encoding: FileSystem.EncodingType.Base64
       });

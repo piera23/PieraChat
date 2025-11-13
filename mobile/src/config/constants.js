@@ -3,6 +3,11 @@ export const WEBSOCKET_URL = 'ws://localhost:8080/ws';
 // For testing on physical device, use your computer's local IP:
 // export const WEBSOCKET_URL = 'ws://192.168.1.x:8080/ws';
 
+// HTTP Server URL for file uploads
+export const SERVER_URL = 'http://localhost:8080';
+// For testing on physical device, use your computer's local IP:
+// export const SERVER_URL = 'http://192.168.1.x:8080';
+
 export const MESSAGE_TYPES = {
   JOIN: 'join',
   LEAVE: 'leave',

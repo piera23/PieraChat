@@ -8,7 +8,7 @@ import { useMobilePieraServer } from '../hooks/useMobilePieraServer';
 import MessageItem from '../components/MessageItem';
 import TypingIndicator from '../components/TypingIndicator';
 import HistoryMenu from '../components/HistoryMenu';
-import { COLORS, CONNECTION_STATES } from '../config/constants';
+import { COLORS, CONNECTION_STATES, SERVER_URL } from '../config/constants';
 import { MediaPickerManager, formatFileSize, formatDuration } from '../utils/mediaPicker';
 import { MobileAudioRecorder } from '../utils/audioRecorder';
 
@@ -184,7 +184,7 @@ export default function ChatScreen({ route, navigation }) {
           selectedMedia.media.fileName,
           selectedMedia.media.mimeType,
           username,
-          window.location ? window.location.origin : 'http://localhost:5000'
+          SERVER_URL
         );
 
         clearInterval(progressInterval);

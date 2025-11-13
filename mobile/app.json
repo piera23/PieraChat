@@ -17,7 +17,14 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.pierachat.app",
-      "buildNumber": "1"
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "PieraChat usa la fotocamera per scattare foto e registrare video da condividere nella chat.",
+        "NSMicrophoneUsageDescription": "PieraChat usa il microfono per registrare messaggi vocali e video.",
+        "NSPhotoLibraryUsageDescription": "PieraChat accede alla galleria per selezionare foto e video da condividere.",
+        "NSContactsUsageDescription": "PieraChat accede ai contatti per permetterti di condividerli nella chat.",
+        "NSCalendarsUsageDescription": "PieraChat accede al calendario per permetterti di condividere eventi."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -27,7 +34,14 @@
       "package": "com.pierachat.app",
       "versionCode": 1,
       "permissions": [
-        "INTERNET"
+        "INTERNET",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_CONTACTS",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR"
       ]
     },
     "web": {
@@ -35,7 +49,20 @@
       "bundler": "metro"
     },
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "PieraChat usa la galleria per selezionare foto e video da condividere.",
+          "cameraPermission": "PieraChat usa la fotocamera per scattare foto e video."
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "PieraChat usa il microfono per registrare messaggi vocali."
+        }
+      ]
     ],
     "extra": {
       "eas": {
