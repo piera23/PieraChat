@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { WEBSOCKET_URL, MESSAGE_TYPES, CONNECTION_STATES } from '../utils/constants';
 import { getEncryptionManager, clearEncryptionManager } from '../utils/encryption';
+import { getLocalStorage } from '../utils/localStorage';
 
 // Utility function to generate unique message IDs
 let messageIdCounter = 0;
@@ -15,17 +16,41 @@ export const useSecurePieraServer = (username) => {
   const [typingUsers, setTypingUsers] = useState(new Set());
   const [error, setError] = useState('');
   const [encryptionReady, setEncryptionReady] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
 
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
   const usernameRef = useRef(username);
   const encryptionManager = useRef(null);
+  const localStorage = useRef(null);
 
   // Update username ref when it changes
   useEffect(() => {
     usernameRef.current = username;
   }, [username]);
+
+  // Initialize local storage and load history
+  useEffect(() => {
+    const initStorage = async () => {
+      try {
+        localStorage.current = getLocalStorage();
+        await localStorage.current.init();
+
+        // Load message history from local device
+        const savedMessages = await localStorage.current.loadMessages();
+        if (savedMessages.length > 0) {
+          console.log(`📦 Loaded ${savedMessages.length} messages from local storage`);
+          setMessages(savedMessages);
+          setHistoryLoaded(true);
+        }
+      } catch (err) {
+        console.error('Failed to initialize local storage:', err);
+      }
+    };
+
+    initStorage();
+  }, []);
 
   // Initialize encryption
   useEffect(() => {
@@ -63,7 +88,7 @@ export const useSecurePieraServer = (username) => {
     const ws = new WebSocket(WEBSOCKET_URL);
 
     ws.onopen = () => {
-      console.log('WebSocket connected');
+      console.log('✅ WebSocket connected - Server is relay only, messages stay on your device!');
       setConnectionState(CONNECTION_STATES.CONNECTED);
       setError('');
       reconnectAttemptsRef.current = 0;
@@ -122,6 +147,8 @@ export const useSecurePieraServer = (username) => {
   }, [username, encryptionReady, connect]);
 
   const handleMessage = useCallback(async (data) => {
+    let newMessage = null;
+
     switch (data.type) {
       case MESSAGE_TYPES.MESSAGE:
         try {
@@ -141,7 +168,7 @@ export const useSecurePieraServer = (username) => {
             }
           }
 
-          setMessages(prev => [...prev, {
+          newMessage = {
             id: data.messageId || generateMessageId(),
             type: 'message',
             username: data.username,
@@ -149,7 +176,15 @@ export const useSecurePieraServer = (username) => {
             timestamp: data.timestamp || new Date().toISOString(),
             isOwn: data.username === usernameRef.current,
             encrypted: !!data.encryptedMessage
-          }]);
+          };
+
+          setMessages(prev => [...prev, newMessage]);
+
+          // Save to local storage
+          if (localStorage.current) {
+            await localStorage.current.saveMessage(newMessage);
+            console.log('💾 Message saved locally on your device');
+          }
         } catch (error) {
           console.error('Error processing message:', error);
         }
@@ -161,11 +196,20 @@ export const useSecurePieraServer = (username) => {
           await encryptionManager.current.storeUserPublicKey(data.username, data.publicKey);
         }
 
-        setMessages(prev => [...prev, {
+        newMessage = {
           id: generateMessageId(),
           type: 'system',
-          message: `🔐 ${data.username} è entrato nella chat (encrypted)`
-        }]);
+          message: `🔐 ${data.username} è entrato nella chat (encrypted)`,
+          timestamp: data.timestamp || new Date().toISOString()
+        };
+
+        setMessages(prev => [...prev, newMessage]);
+
+        // Save system message to local storage
+        if (localStorage.current) {
+          await localStorage.current.saveMessage(newMessage);
+          await localStorage.current.saveUser(data.username);
+        }
 
         if (data.users) {
           // Store all users' public keys
@@ -179,11 +223,20 @@ export const useSecurePieraServer = (username) => {
         break;
 
       case MESSAGE_TYPES.LEAVE:
-        setMessages(prev => [...prev, {
+        newMessage = {
           id: generateMessageId(),
           type: 'system',
-          message: `${data.username} ha lasciato la chat`
-        }]);
+          message: `${data.username} ha lasciato la chat`,
+          timestamp: data.timestamp || new Date().toISOString()
+        };
+
+        setMessages(prev => [...prev, newMessage]);
+
+        // Save to local storage
+        if (localStorage.current) {
+          await localStorage.current.saveMessage(newMessage);
+        }
+
         if (data.users) {
           setOnlineUsers(data.users.map(u => u.username || u));
         }
@@ -224,11 +277,19 @@ export const useSecurePieraServer = (username) => {
 
       case MESSAGE_TYPES.SYSTEM:
         if (data.message) {
-          setMessages(prev => [...prev, {
+          newMessage = {
             id: generateMessageId(),
             type: 'system',
-            message: data.message
-          }]);
+            message: data.message,
+            timestamp: data.timestamp || new Date().toISOString()
+          };
+
+          setMessages(prev => [...prev, newMessage]);
+
+          // Save to local storage
+          if (localStorage.current) {
+            await localStorage.current.saveMessage(newMessage);
+          }
         }
         break;
     }
@@ -244,6 +305,8 @@ export const useSecurePieraServer = (username) => {
           type: MESSAGE_TYPES.MESSAGE,
           encryptedMessage: JSON.stringify(encryptedPackage)
         }));
+
+        console.log('📤 Encrypted message sent via server relay');
       } catch (error) {
         console.error('Failed to encrypt and send message:', error);
         setError('Failed to send encrypted message');
@@ -271,6 +334,37 @@ export const useSecurePieraServer = (username) => {
     setEncryptionReady(false);
   }, []);
 
+  // Clear local history
+  const clearHistory = useCallback(async () => {
+    if (localStorage.current) {
+      await localStorage.current.clearMessages();
+      setMessages([]);
+      console.log('🗑️ Local history cleared from your device');
+    }
+  }, []);
+
+  // Export chat
+  const exportChat = useCallback(async () => {
+    if (localStorage.current) {
+      await localStorage.current.downloadExport();
+    }
+  }, []);
+
+  // Export chat as text
+  const exportChatText = useCallback(async () => {
+    if (localStorage.current) {
+      await localStorage.current.downloadTextExport();
+    }
+  }, []);
+
+  // Get storage stats
+  const getStorageStats = useCallback(async () => {
+    if (localStorage.current) {
+      return await localStorage.current.getStats();
+    }
+    return null;
+  }, []);
+
   useEffect(() => {
     return () => {
       disconnect();
@@ -287,7 +381,13 @@ export const useSecurePieraServer = (username) => {
     sendMessage,
     sendTyping,
     isConnected: connectionState === CONNECTION_STATES.CONNECTED,
-    encryptionReady
+    encryptionReady,
+    historyLoaded,
+    // Local storage functions
+    clearHistory,
+    exportChat,
+    exportChatText,
+    getStorageStats
   };
 };
 

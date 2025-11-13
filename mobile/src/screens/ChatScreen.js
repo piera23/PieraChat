@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMobilePieraServer } from '../hooks/useMobilePieraServer';
 import MessageItem from '../components/MessageItem';
 import TypingIndicator from '../components/TypingIndicator';
+import HistoryMenu from '../components/HistoryMenu';
 import { COLORS, CONNECTION_STATES } from '../config/constants';
 
 export default function ChatScreen({ route, navigation }) {
@@ -14,6 +15,8 @@ export default function ChatScreen({ route, navigation }) {
   const [message, setMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showUsers, setShowUsers] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [storageStats, setStorageStats] = useState(null);
   const typingTimeoutRef = useRef(null);
   const flatListRef = useRef(null);
 
@@ -25,7 +28,12 @@ export default function ChatScreen({ route, navigation }) {
     error,
     sendMessage: sendWsMessage,
     sendTyping,
-    isConnected
+    isConnected,
+    historyLoaded,
+    clearHistory,
+    exportChat,
+    exportChatText,
+    getStorageStats
   } = useMobilePieraServer(username);
 
   useEffect(() => {
@@ -69,6 +77,26 @@ export default function ChatScreen({ route, navigation }) {
     }, 1000);
   };
 
+  const handleShowHistory = async () => {
+    setShowHistory(true);
+    // Load storage stats when opening menu
+    const stats = await getStorageStats();
+    setStorageStats(stats);
+  };
+
+  const handleExportJSON = async () => {
+    await exportChat();
+  };
+
+  const handleExportText = async () => {
+    await exportChatText();
+  };
+
+  const handleClearHistory = async () => {
+    await clearHistory();
+    setShowHistory(false);
+  };
+
   const getConnectionIcon = () => {
     switch (connectionState) {
       case CONNECTION_STATES.CONNECTED:
@@ -90,7 +118,7 @@ export default function ChatScreen({ route, navigation }) {
       <Appbar.Header elevated>
         <Appbar.Content
           title="PieraChat"
-          subtitle={username}
+          subtitle={historyLoaded ? `${username} • ${messages.length} msg locali` : username}
         />
         <MaterialCommunityIcons
           name={connectionIcon.name}
@@ -99,10 +127,19 @@ export default function ChatScreen({ route, navigation }) {
           style={styles.connectionIcon}
         />
         <Appbar.Action
+          icon="database"
+          onPress={handleShowHistory}
+        />
+        <Appbar.Action
           icon="account-group"
           onPress={() => setShowUsers(true)}
         />
         <Badge style={styles.badge}>{onlineUsers.length}</Badge>
+        {historyLoaded && (
+          <Badge style={styles.historyBadge}>
+            <MaterialCommunityIcons name="hard-drive" size={10} color="white" />
+          </Badge>
+        )}
       </Appbar.Header>
 
       <KeyboardAvoidingView
@@ -189,6 +226,16 @@ export default function ChatScreen({ route, navigation }) {
         </Modal>
       </Portal>
 
+      <HistoryMenu
+        visible={showHistory}
+        onDismiss={() => setShowHistory(false)}
+        onExportJSON={handleExportJSON}
+        onExportText={handleExportText}
+        onClearHistory={handleClearHistory}
+        messageCount={messages.length}
+        storageStats={storageStats}
+      />
+
       {error && (
         <Surface style={styles.errorBanner} elevation={4}>
           <MaterialCommunityIcons name="alert-circle" size={20} color="white" />
@@ -215,6 +262,12 @@ const styles = StyleSheet.create({
     top: 8,
     right: 8,
     backgroundColor: COLORS.primary,
+  },
+  historyBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 60,
+    backgroundColor: '#4caf50',
   },
   messagesList: {
     paddingHorizontal: 12,
