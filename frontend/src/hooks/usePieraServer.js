@@ -1,7 +1,11 @@
-//useWebSocket
-
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { WEBSOCKET_URL, MESSAGE_TYPES, CONNECTION_STATES } from '../utils/constants';
+
+// Utility function to generate unique message IDs
+let messageIdCounter = 0;
+const generateMessageId = () => {
+  return `msg-${Date.now()}-${++messageIdCounter}-${Math.random().toString(36).substr(2, 9)}`;
+};
 
 export const usePieraServer = (username) => {
   const [connectionState, setConnectionState] = useState(CONNECTION_STATES.DISCONNECTED);
@@ -13,6 +17,12 @@ export const usePieraServer = (username) => {
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
+  const usernameRef = useRef(username);
+
+  // Update username ref when it changes
+  useEffect(() => {
+    usernameRef.current = username;
+  }, [username]);
 
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
@@ -27,10 +37,10 @@ export const usePieraServer = (username) => {
       reconnectAttemptsRef.current = 0;
 
       // Send join message
-      if (username) {
-        ws.send(JSON.stringify({ 
-          type: MESSAGE_TYPES.JOIN, 
-          username 
+      if (usernameRef.current) {
+        ws.send(JSON.stringify({
+          type: MESSAGE_TYPES.JOIN,
+          username: usernameRef.current
         }));
       }
     };
@@ -53,12 +63,12 @@ export const usePieraServer = (username) => {
     ws.onclose = () => {
       console.log('WebSocket disconnected');
       setConnectionState(CONNECTION_STATES.DISCONNECTED);
-      
+
       // Attempt to reconnect with exponential backoff
-      if (username) {
+      if (usernameRef.current) {
         const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
         reconnectAttemptsRef.current++;
-        
+
         reconnectTimeoutRef.current = setTimeout(() => {
           connect();
         }, delay);
@@ -66,24 +76,24 @@ export const usePieraServer = (username) => {
     };
 
     wsRef.current = ws;
-  }, [username]);
+  }, []);
 
   const handleMessage = useCallback((data) => {
     switch (data.type) {
       case MESSAGE_TYPES.MESSAGE:
         setMessages(prev => [...prev, {
-          id: Date.now() + Math.random(),
+          id: generateMessageId(),
           type: 'message',
           username: data.username,
           message: data.message,
           timestamp: data.timestamp || new Date().toISOString(),
-          isOwn: data.username === username
+          isOwn: data.username === usernameRef.current
         }]);
         break;
 
       case MESSAGE_TYPES.JOIN:
         setMessages(prev => [...prev, {
-          id: Date.now() + Math.random(),
+          id: generateMessageId(),
           type: 'system',
           message: `${data.username} è entrato nella chat`
         }]);
@@ -92,7 +102,7 @@ export const usePieraServer = (username) => {
 
       case MESSAGE_TYPES.LEAVE:
         setMessages(prev => [...prev, {
-          id: Date.now() + Math.random(),
+          id: generateMessageId(),
           type: 'system',
           message: `${data.username} ha lasciato la chat`
         }]);
@@ -104,7 +114,7 @@ export const usePieraServer = (username) => {
         break;
 
       case MESSAGE_TYPES.TYPING:
-        if (data.username !== username) {
+        if (data.username !== usernameRef.current) {
           setTypingUsers(prev => new Set(prev).add(data.username));
         }
         break;
@@ -124,14 +134,14 @@ export const usePieraServer = (username) => {
       case MESSAGE_TYPES.SYSTEM:
         if (data.message) {
           setMessages(prev => [...prev, {
-            id: Date.now() + Math.random(),
+            id: generateMessageId(),
             type: 'system',
             message: data.message
           }]);
         }
         break;
     }
-  }, [username]);
+  }, []);
 
   const sendMessage = useCallback((message) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -168,7 +178,8 @@ export const usePieraServer = (username) => {
     return () => {
       disconnect();
     };
-  }, [username, connect, disconnect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username]);
 
   return {
     connectionState,

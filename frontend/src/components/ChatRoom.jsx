@@ -4,13 +4,13 @@ import LoginScreen from './LoginScreen';
 import MessageList from './MessageList';
 import MessageInput from './MessageInput';
 import UserList from './UserList';
-import { useWebSocket } from '../hooks/useWebSocket';
+import { usePieraServer } from '../hooks/usePieraServer';
 import { CONNECTION_STATES } from '../utils/constants';
 
 const ChatRoom = () => {
   const [username, setUsername] = useState('');
   const [showMobileMenu, setShowMobileMenu] = useState(false);
-  
+
   const {
     connectionState,
     messages,
@@ -20,7 +20,7 @@ const ChatRoom = () => {
     sendMessage,
     sendTyping,
     isConnected
-  } = useWebSocket(username);
+  } = usePieraServer(username);
 
   const handleLogin = (newUsername) => {
     setUsername(newUsername);
