@@ -1,13 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { WEBSOCKET_URL, MESSAGE_TYPES, CONNECTION_STATES } from '../utils/constants';
+import { WEBSOCKET_URL, MESSAGE_TYPES, CONNECTION_STATES } from '../config/constants';
 
-// Utility function to generate unique message IDs
 let messageIdCounter = 0;
 const generateMessageId = () => {
   return `msg-${Date.now()}-${++messageIdCounter}-${Math.random().toString(36).substr(2, 9)}`;
 };
 
-export const usePieraServer = (username) => {
+export const useMobilePieraServer = (username) => {
   const [connectionState, setConnectionState] = useState(CONNECTION_STATES.DISCONNECTED);
   const [messages, setMessages] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
@@ -19,7 +18,6 @@ export const usePieraServer = (username) => {
   const reconnectAttemptsRef = useRef(0);
   const usernameRef = useRef(username);
 
-  // Update username ref when it changes
   useEffect(() => {
     usernameRef.current = username;
   }, [username]);
@@ -28,64 +26,69 @@ export const usePieraServer = (username) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     setConnectionState(CONNECTION_STATES.CONNECTING);
-    const ws = new WebSocket(WEBSOCKET_URL);
 
-    ws.onopen = () => {
-      console.log('WebSocket connected');
-      setConnectionState(CONNECTION_STATES.CONNECTED);
-      setError('');
-      reconnectAttemptsRef.current = 0;
+    try {
+      const ws = new WebSocket(WEBSOCKET_URL);
 
-      // Send join message
-      if (usernameRef.current) {
-        ws.send(JSON.stringify({
-          type: MESSAGE_TYPES.JOIN,
-          username: usernameRef.current
-        }));
-      }
-    };
+      ws.onopen = () => {
+        console.log('📱 Mobile WebSocket connected');
+        setConnectionState(CONNECTION_STATES.CONNECTED);
+        setError('');
+        reconnectAttemptsRef.current = 0;
 
-    ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        handleMessage(data);
-      } catch (err) {
-        console.error('Error parsing message:', err);
-      }
-    };
+        if (usernameRef.current) {
+          ws.send(JSON.stringify({
+            type: MESSAGE_TYPES.JOIN,
+            username: usernameRef.current
+          }));
+        }
+      };
 
-    ws.onerror = (event) => {
-      console.error('WebSocket error:', event);
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleMessage(data);
+        } catch (err) {
+          console.error('Error parsing message:', err);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionState(CONNECTION_STATES.ERROR);
+        setError('Errore di connessione');
+      };
+
+      ws.onclose = () => {
+        console.log('WebSocket disconnected');
+        setConnectionState(CONNECTION_STATES.DISCONNECTED);
+
+        if (usernameRef.current) {
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
+          reconnectAttemptsRef.current++;
+
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connect();
+          }, delay);
+        }
+      };
+
+      wsRef.current = ws;
+    } catch (error) {
+      console.error('Connection error:', error);
+      setError('Impossibile connettersi al server');
       setConnectionState(CONNECTION_STATES.ERROR);
-      setError('Errore di connessione');
-    };
-
-    ws.onclose = () => {
-      console.log('WebSocket disconnected');
-      setConnectionState(CONNECTION_STATES.DISCONNECTED);
-
-      // Attempt to reconnect with exponential backoff
-      if (usernameRef.current) {
-        const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
-        reconnectAttemptsRef.current++;
-
-        reconnectTimeoutRef.current = setTimeout(() => {
-          connect();
-        }, delay);
-      }
-    };
-
-    wsRef.current = ws;
+    }
   }, []);
 
   const handleMessage = useCallback((data) => {
     switch (data.type) {
       case MESSAGE_TYPES.MESSAGE:
         setMessages(prev => [...prev, {
-          id: generateMessageId(),
+          id: data.messageId || generateMessageId(),
           type: 'message',
           username: data.username,
-          message: data.message,
+          message: data.message || data.encryptedMessage,
           timestamp: data.timestamp || new Date().toISOString(),
           isOwn: data.username === usernameRef.current
         }]);
@@ -97,7 +100,9 @@ export const usePieraServer = (username) => {
           type: 'system',
           message: `${data.username} è entrato nella chat`
         }]);
-        if (data.users) setOnlineUsers(data.users);
+        if (data.users) {
+          setOnlineUsers(data.users.map(u => u.username || u));
+        }
         break;
 
       case MESSAGE_TYPES.LEAVE:
@@ -106,11 +111,13 @@ export const usePieraServer = (username) => {
           type: 'system',
           message: `${data.username} ha lasciato la chat`
         }]);
-        if (data.users) setOnlineUsers(data.users);
+        if (data.users) {
+          setOnlineUsers(data.users.map(u => u.username || u));
+        }
         break;
 
       case MESSAGE_TYPES.USERS:
-        setOnlineUsers(data.users || []);
+        setOnlineUsers(data.users ? data.users.map(u => u.username || u) : []);
         break;
 
       case MESSAGE_TYPES.TYPING:
@@ -129,6 +136,7 @@ export const usePieraServer = (username) => {
 
       case MESSAGE_TYPES.ERROR:
         setError(data.message);
+        setTimeout(() => setError(''), 5000);
         break;
 
       case MESSAGE_TYPES.SYSTEM:
@@ -192,3 +200,5 @@ export const usePieraServer = (username) => {
     isConnected: connectionState === CONNECTION_STATES.CONNECTED
   };
 };
+
+export default useMobilePieraServer;
