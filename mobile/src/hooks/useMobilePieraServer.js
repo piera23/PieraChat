@@ -110,14 +110,40 @@ export const useMobilePieraServer = (username) => {
   const handleMessage = useCallback(async (data) => {
     switch (data.type) {
       case MESSAGE_TYPES.MESSAGE:
-        const newMessage = {
-          id: data.messageId || generateMessageId(),
-          type: 'message',
-          username: data.username,
-          message: data.message || data.encryptedMessage,
-          timestamp: data.timestamp || new Date().toISOString(),
-          isOwn: data.username === usernameRef.current
-        };
+        let messageText = data.message || data.encryptedMessage;
+
+        // Parse multimedia message if it's JSON
+        let parsedMessage;
+        if (messageText && typeof messageText === 'string' && messageText.startsWith('{')) {
+          try {
+            parsedMessage = JSON.parse(messageText);
+          } catch {
+            parsedMessage = null;
+          }
+        }
+
+        let newMessage;
+        if (parsedMessage && parsedMessage.type) {
+          // Multimedia message (image, video, audio, file, contact, event)
+          newMessage = {
+            id: data.messageId || generateMessageId(),
+            type: parsedMessage.type,
+            username: data.username,
+            timestamp: data.timestamp || new Date().toISOString(),
+            isOwn: data.username === usernameRef.current,
+            ...parsedMessage // Spread media/contact/event data
+          };
+        } else {
+          // Text message
+          newMessage = {
+            id: data.messageId || generateMessageId(),
+            type: 'message',
+            username: data.username,
+            message: messageText,
+            timestamp: data.timestamp || new Date().toISOString(),
+            isOwn: data.username === usernameRef.current
+          };
+        }
 
         setMessages(prev => [...prev, newMessage]);
 
@@ -189,12 +215,29 @@ export const useMobilePieraServer = (username) => {
     }
   }, []);
 
-  const sendMessage = useCallback((message) => {
+  const sendMessage = useCallback((messageData) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      // Handle different message types
+      let messageToSend;
+
+      if (typeof messageData === 'string') {
+        // Legacy: plain text message
+        messageToSend = messageData;
+      } else if (messageData.type === 'text') {
+        // Text message object
+        messageToSend = messageData.message;
+      } else {
+        // Multimedia message: serialize entire object
+        messageToSend = JSON.stringify(messageData);
+      }
+
       wsRef.current.send(JSON.stringify({
         type: MESSAGE_TYPES.MESSAGE,
-        message
+        message: messageToSend,
+        messageType: typeof messageData === 'object' ? messageData.type : 'text'
       }));
+
+      console.log(`📤 ${typeof messageData === 'object' ? messageData.type : 'text'} message sent`);
     }
   }, []);
 
