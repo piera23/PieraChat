@@ -117,6 +117,7 @@ const ChatRoom = () => {
             onSendMessage={sendMessage}
             onTyping={sendTyping}
             isConnected={isConnected}
+            username={username}
           />
         </div>
 

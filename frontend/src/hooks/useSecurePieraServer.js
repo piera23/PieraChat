@@ -168,15 +168,40 @@ export const useSecurePieraServer = (username) => {
             }
           }
 
-          newMessage = {
-            id: data.messageId || generateMessageId(),
-            type: 'message',
-            username: data.username,
-            message: messageText,
-            timestamp: data.timestamp || new Date().toISOString(),
-            isOwn: data.username === usernameRef.current,
-            encrypted: !!data.encryptedMessage
-          };
+          // Parse multimedia message if it's JSON
+          let parsedMessage;
+          if (messageText && messageText.startsWith('{')) {
+            try {
+              parsedMessage = JSON.parse(messageText);
+            } catch {
+              parsedMessage = null;
+            }
+          }
+
+          // Build message object
+          if (parsedMessage && parsedMessage.type) {
+            // Multimedia message (image, video, audio, file, contact, event)
+            newMessage = {
+              id: data.messageId || generateMessageId(),
+              type: parsedMessage.type,
+              username: data.username,
+              timestamp: data.timestamp || new Date().toISOString(),
+              isOwn: data.username === usernameRef.current,
+              encrypted: !!data.encryptedMessage,
+              ...parsedMessage // Spread media/contact/event data
+            };
+          } else {
+            // Text message
+            newMessage = {
+              id: data.messageId || generateMessageId(),
+              type: 'message',
+              username: data.username,
+              message: messageText,
+              timestamp: data.timestamp || new Date().toISOString(),
+              isOwn: data.username === usernameRef.current,
+              encrypted: !!data.encryptedMessage
+            };
+          }
 
           setMessages(prev => [...prev, newMessage]);
 
@@ -295,18 +320,33 @@ export const useSecurePieraServer = (username) => {
     }
   }, []);
 
-  const sendMessage = useCallback(async (message) => {
+  const sendMessage = useCallback(async (messageData) => {
     if (wsRef.current?.readyState === WebSocket.OPEN && encryptionManager.current) {
       try {
+        // Handle different message types
+        let messageToEncrypt;
+
+        if (typeof messageData === 'string') {
+          // Legacy: plain text message
+          messageToEncrypt = messageData;
+        } else if (messageData.type === 'text') {
+          // Text message object
+          messageToEncrypt = messageData.message;
+        } else {
+          // Multimedia message: serialize entire object
+          messageToEncrypt = JSON.stringify(messageData);
+        }
+
         // Encrypt the message
-        const encryptedPackage = await encryptionManager.current.encryptMessage(message);
+        const encryptedPackage = await encryptionManager.current.encryptMessage(messageToEncrypt);
 
         wsRef.current.send(JSON.stringify({
           type: MESSAGE_TYPES.MESSAGE,
-          encryptedMessage: JSON.stringify(encryptedPackage)
+          encryptedMessage: JSON.stringify(encryptedPackage),
+          messageType: messageData.type || 'text' // Include message type for routing
         }));
 
-        console.log('📤 Encrypted message sent via server relay');
+        console.log(`📤 Encrypted ${messageData.type || 'text'} message sent via server relay`);
       } catch (error) {
         console.error('Failed to encrypt and send message:', error);
         setError('Failed to send encrypted message');
