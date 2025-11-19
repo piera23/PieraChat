@@ -15,7 +15,7 @@
     },
     "production": {
       "android": {
-        "buildType": "apk"
+        "buildType": "app-bundle"
       },
       "ios": {
         "simulator": false
@@ -23,6 +23,15 @@
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed"
+      },
+      "ios": {
+        "ascAppId": "your-app-store-connect-id",
+        "appleTeamId": "YOUR_TEAM_ID"
+      }
+    }
   }
 }

@@ -1,0 +1,46 @@
+[Unit]
+Description=PieraChat WebSocket Server v2.0
+Documentation=https://github.com/piera23/PieraChat
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/pierachat/backend
+ExecStart=/usr/bin/dotnet /opt/pierachat/backend/PieraServer.dll
+Restart=always
+RestartSec=10
+KillSignal=SIGINT
+SyslogIdentifier=pierachat
+
+# Environment variables
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://0.0.0.0:8080
+Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/pierachat/backend/uploads
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+
+# Resource limits
+LimitNOFILE=65535
+LimitNPROC=4096
+TasksMax=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
